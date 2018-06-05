@@ -1,0 +1,540 @@
+#!/bin/bash
+### 
+### MIT License
+### 
+### Copyright (c) 2018 David Cachau <safranil@safranil.fr>
+### Copyright (c) 2018 CAPSI Informatique
+### 
+### Permission is hereby granted, free of charge, to any person obtaining a copy
+### of this software and associated documentation files (the "Software"), to deal
+### in the Software without restriction, including without limitation the rights
+### to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+### copies of the Software, and to permit persons to whom the Software is
+### furnished to do so, subject to the following conditions:
+### 
+### The above copyright notice and this permission notice shall be included in all
+### copies or substantial portions of the Software.
+### 
+### THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+### IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+### FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+### AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+### LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+### OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+### SOFTWARE.
+### 
+
+
+
+CURL=`which curl`
+if [ -z "$CURL" ]
+then
+    echo "curl is not found, please install curl before using this script."
+    exit 1
+fi
+
+# Import local config
+if [ -f ~/balancer-manager.conf ] && [ -r ~/balancer-manager.conf ]
+then
+    source ~/balancer-manager.conf
+else
+    echo "The config file doesn't exist, please put this content in ~/balancer-manager.conf :"
+    echo ""
+    echo "# Default slow-start time"
+    echo "DEFAULT_TIME=60"
+    echo "# Default update interval"
+    echo "DEFAULT_INTERVAL=5"
+    echo ""
+    echo "# Groups configuration"
+    echo "SERVERS_GROUPS=("
+    echo "    'prod'"
+    echo "    'test'"
+    echo "    'demo'"
+    echo ")"
+    echo ""
+    echo "# Servers configuration"
+    echo "SERVERS_PROD=("
+    echo "    'https://server1.example.com/balancer-manager'"
+    echo "    'https://server2.example.com/balancer-manager'"
+    echo "    'https://server3.example.com/balancer-manager'"
+    echo ")"
+    echo ""
+    echo "SERVERS_TEST=("
+    echo "    'https://server1-test.example.com:8443/balancer-manager'"
+    echo "    'https://server2-test.example.com:8443/balancer-manager'"
+    echo ")"
+    echo ""
+    echo "SERVERS_DEMO=("
+    echo "    'https://server-demo.example.com/balancer-manager'"
+    echo ")"
+    echo ""
+
+    exit 2
+fi
+
+case $TERM in
+    *-color|*-256color)
+        if [ -t 1 ]
+        then
+            BLUE="\e[34m"
+            YELLOW="\e[33m"
+            GREEN="\e[32m"
+            RED="\e[31m"
+            BOLD="\e[1m"
+            UNDERLINE="\e[4m"
+            RESET="\e[0m"
+        else
+            BLUE=""
+            YELLOW=""
+            GREEN=""
+            RED=""
+            BOLD=""
+            UNDERLINE=""
+            RESET=""
+        fi
+        ;;
+    *)
+        BLUE=""
+        YELLOW=""
+        GREEN=""
+        RED=""
+        BOLD=""
+        UNDERLINE=""
+        RESET=""
+        ;;
+esac
+
+
+
+function list_groups {
+    for group in "${SERVERS_GROUPS[@]}"
+    do
+        if [ ! -z "$1" ] && [ "$1" != "$group" ]
+        then
+            continue
+        fi
+
+        group_var=SERVERS_`echo $group| tr '[:lower:]' '[:upper:]'`[@]
+        echo -e "${BLUE}Group \"${group}\":${RESET}"
+
+        for server in "${!group_var}"
+        do
+            echo "    "$server
+        done
+    done
+}
+
+function list_balancers {
+    if [ -z "$1" ]
+    then
+        echo "Usage: $0 list-balancers group"
+        echo ""
+        echo -e "${RED}The parameter \"group\" is required, see \"$0 help\" for help.${RESET}" 
+
+        exit 3
+    fi
+
+    group_var=SERVERS_`echo $1 | tr '[:lower:]' '[:upper:]'`[@]
+    declare -A balancer_map
+    for server in "${!group_var}"
+    do
+        echo -e "${BLUE}Balancer on ${YELLOW}$server:${RESET}"
+        balancer_map[$server]=`curl -s "$server" | grep "balancer://" | sed "s/.*balancer:\/\/\(.*\)<\/a>.*/\1/"`
+        for balancer in ${balancer_map[$server]}
+        do
+            echo "    $balancer"
+        done
+    done
+
+    previous=${balancer_map[$server]}
+    for server in "${!balancer_map[@]}"
+    do
+        previous=`comm <( echo $previous | sort ) <( echo ${balancer_map[$server]} | sort )`
+    done
+
+    echo ""
+    echo -e "${BLUE}${BOLD}Common balancers:${RESET}"
+    for balancer in $previous
+    do
+        echo "    $balancer"
+    done
+}
+
+function list_workers {
+    group=$1
+    balancer=$2
+
+    if [ -z "$group" ] || [ -z $balancer ]
+    then
+        echo "Usage: $0 list-workers group balancer"
+        echo ""
+        echo -e "${RED}The parameter \"group\" and \"balancer\" are required, see \"$0 help\" for help.${RESET}"
+
+        exit 3
+    fi
+
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    declare -A worker_map
+    for server in "${!group_var}"
+    do
+        echo -e "${BLUE}Worker for ${YELLOW}$balancer${BLUE} on ${YELLOW}$server${BLUE}:${RESET}"
+        worker_map[$server]=`curl -s "$server" | grep "/balancer-manager?b=${balancer}&amp;w" \
+            | sed "s/.*href='\(.[^']*\).*/\1/" | sed "s/.*w=\(.*\)&.*/\1/"`
+        for worker in ${worker_map[$server]}
+        do
+            echo "    $worker"
+        done
+    done
+
+    previous=${worker_map[$server]}
+    for server in "${!worker_map[@]}"
+    do
+        previous=`comm <( echo $previous | sort ) <( echo ${worker_map[$server]} | sort )`
+    done
+
+    echo ""
+    echo -e "${BLUE}${BOLD}Common workers:${RESET}"
+    for worker in $previous
+    do
+        echo "    $worker"
+    done
+}
+function workers_list {
+    group=$1
+    balancer=$2
+
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    declare -A worker_map
+    for server in "${!group_var}"
+    do
+        worker_map[$server]=`curl -s "$server" | grep "/balancer-manager?b=${balancer}&amp;w" \
+            | sed "s/.*href='\(.[^']*\).*/\1/" | sed "s/.*w=\(.*\)&.*/\1/"`
+        for worker in ${worker_map[$server]}
+        do
+            echo "$worker"
+        done
+    done
+}
+
+function check_worker {
+    group=$1
+    balancer=$2
+	worker=$3
+	
+	result=`comm -12 <(workers_list $group $balancer | sort | uniq) <(echo $worker)`
+	
+	if [ -z "$result" ]
+	then
+		echo -e "${RED}Worker $worker not found for balancer $balancer${RESET}"
+		exit 6
+	fi
+}
+
+function disable_worker {
+    group=$1
+    balancer=$2
+    worker=$3
+
+    if [ -z "$group" ] || [ -z $balancer ] || [ -z $worker ]
+    then
+        echo "Usage: $0 disable group balancer worker"
+        echo ""
+        echo -e "${RED}The parameter \"group\", \"balancer\" and \"worker\" are required, see \"$0 help\" for help.${RESET}"
+
+        exit 3
+    fi
+
+	check_worker $group $balancer $worker
+	
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    for server in "${!group_var}"
+    do
+        nonce=`curl -s "$server" | grep "$balancer" | grep "nonce" \
+            | sed "s/.*nonce=\(.*\)['\"].*/\1/" | head -n 1`
+        if [ -z "$nonce" ]
+        then
+            echo -e "${RED}Balancer or Nonce not found on $server{$RESET}"
+        else
+            echo -e "Disabling worker ${YELLOW}$worker${RESET} for ${YELLOW}$balancer${RESET} on ${YELLOW}$server${RESET}"
+            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_D=1"`
+        fi
+    done
+	
+	show_status $group $balancer
+}
+
+function stop_worker {
+    group=$1
+    balancer=$2
+    worker=$3
+
+    if [ -z "$group" ] || [ -z $balancer ] || [ -z $worker ]
+    then
+        echo "Usage: $0 stop group balancer worker"
+        echo ""
+        echo -e "${RED}The parameter \"group\", \"balancer\" and \"worker\" are required, see \"$0 help\" for help.${RESET}"
+
+        exit 3
+    fi
+	
+	check_worker $group $balancer $worker
+	
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    for server in "${!group_var}"
+    do
+        nonce=`curl -s "$server" | grep "${balancer}" | grep "nonce" \
+            | sed "s/.*nonce=\(.*\)['\"].*/\1/" | head -n 1`
+        if [ -z "$nonce" ]
+        then
+            echo -e "${RED}Balancer or Nonce not found on $server${RESET}"
+        else
+            echo -e "Stopping worker $worker for $balancer on ${YELLOW}$server${RESET}"
+            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=1"`
+        fi
+    done
+	
+	show_status $group $balancer
+}
+
+function enable_worker {
+    group=$1
+    balancer=$2
+    worker=$3
+	
+	check_worker $group $balancer $worker
+	
+    if [ -z "$group" ] || [ -z $balancer ] || [ -z $worker ]
+    then
+        echo "Usage: $0 stop group balancer worker"
+        echo ""
+        echo -e "${RED}The parameter \"group\", \"balancer\" and \"worker\" are required, see \"$0 help\" for help.${RESET}"
+
+        exit 3
+    fi
+
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    for server in "${!group_var}"
+    do
+        nonce=`curl -s "$server" | grep "${balancer}" | grep "nonce" \
+            | sed "s/.*nonce=\(.*\)['\"].*/\1/" | head -n 1`
+        if [ -z "$nonce" ]
+        then
+            echo -e "${RED}Balancer or Nonce not found on $server${RESET}"
+        else
+            echo -e "Enabling worker ${YELLOW}$worker${RESET} for ${YELLOW}$balancer${RESET} on ${YELLOW}$server${RESET}"
+            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=0" -d "w_status_D=0"`
+        fi
+    done
+	
+	show_status $group $balancer
+}
+ 
+function enable_worker_slow {
+    group=$1
+    balancer=$2
+    worker=$3
+    factor=$4
+    duration=$5
+    interval=$6
+
+    if [ -z "$duration" ]
+    then
+        duration=$DEFAULT_TIME
+    fi
+
+    if [ -z "$interval" ]
+    then
+        interval=$DEFAULT_INTERVAL
+    fi
+
+    if [ -z "$group" ] || [ -z $balancer ] || [ -z $worker ] || [ -z "$factor" ] || [ -z "$duration" ] || [ -z "$interval" ]
+    then
+        echo "Usage: $0 slow-start group balancer worker factor [time [interval]]"
+        echo ""
+        echo -e "${RED}The parameter \"group\", \"balancer\", \"worker\" and \"factor\" are required, see \"$0 help\" for help.${RESET}"
+
+        exit 3
+    fi
+	
+	check_worker $group $balancer $worker
+
+    if ! [[ "$factor" =~ ^[0-9]+$ ]] || ! [[ "$interval" =~ ^[0-9]+$ ]] || ! [[ "$duration" =~ ^[0-9]+$ ]]
+    then
+        echo -e "${RED}The parameter \"factor\", \"time\" and \"interval\" need to be integer, see \"$0 help\" for help.${RESET}"
+
+        exit 4
+    fi
+
+    if [[ "$factor" -gt 100 ]] || [[ "$factor" -lt 1 ]]
+    then
+        echo -e "${RED}The parameter \"factor\" need to be between 1 and 100.${RESET}"
+        exit 5
+    fi
+
+    iteration=`bc -l <<< "scale=0; $duration/$interval"`
+
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    for i in `seq 1 $iteration`
+    do
+        current_factor=`bc -l <<< "scale=0; $factor*$i/($duration/$interval)"`
+
+        if [[ $current_factor -lt 1 ]]
+        then
+            current_factor=1
+        fi
+
+        for server in "${!group_var}"
+        do
+            nonce=`curl -s "$server" | grep "${balancer}" | grep "nonce" \
+                | sed "s/.*nonce=\(.*\)['\"].*/\1/" | head -n 1`
+            if [ -z "$nonce" ]
+            then
+                echo -e "${RED}Balancer or Nonce not found on $server${RESET}"
+            else
+                echo -e "Setting factor to $current_factor on ${YELLOW}$server${RESET}"
+                result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=0" -d "w_status_D=0" -d "w_lf=$current_factor"`
+            fi
+        done
+
+        sleep $interval
+    done
+	
+	show_status $group $balancer
+}
+
+function show_status {
+    group=$1
+    balancer=$2
+
+    if [ -z "$group" ]
+    then
+        echo "Usage: $0 status group [balancer]"
+        echo ""
+        echo -e "${RED}The parameter \"group\" is required, see \"$0 help\" for help.${RESET}"
+
+        exit 3
+    fi
+
+    group_var=SERVERS_`echo $group | tr '[:lower:]' '[:upper:]'`[@]
+    for server in "${!group_var}"
+    do
+		if [ -z "$balancer" ]
+		then
+			result=`curl -s "$server" | grep "href"`$'\n'
+		else
+			result=`curl -s "$server" | grep "href" | grep "?b=${balancer}&amp;"`$'\n'
+		fi
+			
+        data=""
+        while read -r line
+        do
+            balancer_name=`echo $line | sed 's/<h3>.*<a .*>balancer:\/\/\(.*\)<\/a>.*/\1/;t;d'`
+            if ! [ -z "$line" ] && [ -z "$balancer_name" ]
+            then
+                table=`echo $line | sed -e 's/<\/td><td>/;/g' -e 's/<\/td>//g' -e 's/<td>//g' -e 's/<\/tr>//g' -e 's/<a .*>\(.*:\/\/.*\)<\/a>/\1/' -e 's/ *; */;/g'`
+                data="${data}"$'\n'"${table}"
+            else
+                if ! [ -z "$data" ]
+                then
+                    cut -d ';' -f "1,4,6,7,9,10,11" <<< $data | column -t -s ';' -o ' | ' | sed "1 s/\(.*\)/$(printf ${UNDERLINE})\1$(printf ${RESET})/" \
+					| sed "s/\(Init Ok\)/$(printf ${GREEN})\1$(printf ${RESET})/" | sed "2,\${s/\(.*|.*|\)\(.*\)\(|.*|.*|.*|.*\)/\1$(printf ${RED})\2$(printf ${RESET})\3/}"
+                fi
+				
+				if ! [ -z "$balancer_name" ]
+				then
+					echo ""
+					echo -e "Status of ${YELLOW}$balancer_name${RESET} on ${YELLOW}$server${RESET}:"
+					data="Worker URL;;;Factor;Set;Status;Elected;Busy;Load;To;From;;;;;;\n"
+				fi
+            fi
+        done <<< $result
+    done
+}
+
+function show_help {
+    echo "Usage: $0 {help|list-groups|list-balancers|list-workers|disable|enable|slow-start|status}"
+    echo ""
+    echo "Commands:"
+    echo -e "    ${YELLOW}${UNDERLINE}help${RESET}            Show this help"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}license${RESET}         Show the license"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}list-groups${RESET}     List groups and servers defined in ~/balancer-manager.conf"
+    echo -e "        ${YELLOW}list-groups ${GREEN}[group]${RESET}"
+    echo -e "            ${GREEN}${UNDERLINE}[group]${RESET}     Show only the servers of this group"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}list-balancers${RESET}  List balancers for each server in the group"
+    echo -e "        ${YELLOW}list-balancers ${GREEN}group${RESET}"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}list-workers${RESET}    List workers the choosen balancer"
+    echo -e "        ${YELLOW}list-workers ${GREEN}group balancer${RESET}"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}disable${RESET}         Disable a worker"
+    echo -e "        ${YELLOW}disable ${GREEN}group balancer worker${RESET}"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}stop${RESET}            Stop a worker"
+    echo -e "        ${YELLOW}stop ${GREEN}group balancer worker${RESET}"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}enable${RESET}          Enable a worker"
+    echo -e "        ${YELLOW}enable ${GREEN}group balancer worker${RESET}"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}slow-start${RESET}      Enable a worker and do a slow start (Factor)"
+    echo -e "        ${YELLOW}slow-start ${GREEN}group balancer worker factor [time [interval]]${RESET}"
+    echo -e "            ${GREEN}${UNDERLINE}factor${RESET}      The final factor between 1 and 100"
+    echo -e "            ${GREEN}${UNDERLINE}[time]${RESET}      Slow start duration (Default to "$DEFAULT_TIME" seconds)"
+    echo -e "            ${GREEN}${UNDERLINE}[interval]${RESET}  Interval between balancer update (Default to "$DEFAULT_INTERVAL" seconds)"
+    echo ""
+    echo -e "    ${YELLOW}${UNDERLINE}status${RESET}          Show status of workers and balancers"
+    echo -e "        ${YELLOW}status ${GREEN}group [balancer]${RESET}"
+    echo ""
+    echo "    For each subcommands:"
+    echo -e "        ${GREEN}${UNDERLINE}group${RESET}       Refer to the groups set in configuration file"
+    echo -e "        ${GREEN}${UNDERLINE}balancer${RESET}    Refer to a balancer name found via list-balancers (e.g. my-balancer)"
+    echo -e "        ${GREEN}${UNDERLINE}worker${RESET}      Refer to a worker found via list-workers (e.g. ajp://myserver:8009/)"
+    echo ""
+}
+
+function show_license {
+	grep "###" $0 | sed "s/^### \(.*\)/\1/;t;d"
+}
+
+case $1 in
+    list-groups)
+        list_groups "${@:2}"
+        ;;
+    list-balancers)
+        list_balancers "${@:2}"
+        ;;
+    list-workers)
+        list_workers "${@:2}"
+        ;;
+    disable)
+        disable_worker "${@:2}"
+        ;;
+    stop)
+        stop_worker "${@:2}"
+        ;;
+    enable)
+        enable_worker "${@:2}"
+        ;;
+    slow-start)
+        enable_worker_slow "${@:2}"
+        ;;
+    status)
+        show_status "${@:2}"
+        ;;
+    help)
+        show_help
+        exit 0
+        ;;
+    license)
+        show_license
+        exit 0
+        ;;
+    *)
+        show_help
+        exit 3
+        ;;
+esac
+
+exit $?
