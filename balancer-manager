@@ -34,11 +34,11 @@ then
 fi
 
 # Import local config
-if [ -f ~/balancer-manager.conf ] && [ -r ~/balancer-manager.conf ]
+if [ -f ~/.balancer-manager.conf ] && [ -r ~/.balancer-manager.conf ]
 then
-    source ~/balancer-manager.conf
+    source ~/.balancer-manager.conf
 else
-    echo "The config file doesn't exist, please put this content in ~/balancer-manager.conf :"
+    echo "The config file doesn't exist, please put this content in ~/.balancer-manager.conf :"
     echo ""
     echo "# Default slow-start time"
     echo "DEFAULT_TIME=60"
@@ -459,7 +459,7 @@ function show_help {
     echo ""
     echo -e "    ${YELLOW}${UNDERLINE}license${RESET}         Show the license"
     echo ""
-    echo -e "    ${YELLOW}${UNDERLINE}list-groups${RESET}     List groups and servers defined in ~/balancer-manager.conf"
+    echo -e "    ${YELLOW}${UNDERLINE}list-groups${RESET}     List groups and servers defined in ~/.balancer-manager.conf"
     echo -e "        ${YELLOW}list-groups ${GREEN}[group]${RESET}"
     echo -e "            ${GREEN}${UNDERLINE}[group]${RESET}     Show only the servers of this group"
     echo ""
