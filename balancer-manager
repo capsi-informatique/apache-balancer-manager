@@ -436,7 +436,7 @@ function show_status {
             else
                 if ! [ -z "$data" ]
                 then
-                    cut -d ';' -f "1,4,6,7,9,10,11" <<< $data | column -t -s ';' -o ' | ' | sed "1 s/\(.*\)/$(printf ${UNDERLINE})\1$(printf ${RESET})/" \
+                    cut -d ';' -f "1,4,6,7,9,10,11" <<< $data | column -t -s ';' | sed "1 s/\(.*\)/$(printf ${UNDERLINE})\1$(printf ${RESET})/" \
 					| sed "s/\(Init Ok\)/$(printf ${GREEN})\1$(printf ${RESET})/" | sed "2,\${s/\(.*|.*|\)\(.*\)\(|.*|.*|.*|.*\)/\1$(printf ${RED})\2$(printf ${RESET})\3/}"
                 fi
 				
