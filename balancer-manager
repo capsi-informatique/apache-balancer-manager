@@ -2,8 +2,8 @@
 ### 
 ### MIT License
 ### 
-### Copyright (c) 2018 David Cachau <safranil@safranil.fr>
-### Copyright (c) 2018 CAPSI Informatique
+### Copyright (c) 2022 David Cachau <safranil@safranil.fr>
+### Copyright (c) 2022 CAPSI Informatique
 ### 
 ### Permission is hereby granted, free of charge, to any person obtaining a copy
 ### of this software and associated documentation files (the "Software"), to deal
@@ -256,7 +256,7 @@ function disable_worker {
             echo -e "${RED}Balancer or Nonce not found on $server{$RESET}"
         else
             echo -e "Disabling worker ${YELLOW}$worker${RESET} for ${YELLOW}$balancer${RESET} on ${YELLOW}$server${RESET}"
-            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_D=1"`
+            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_D=1" -e "$server"`
         fi
     done
 	
@@ -289,7 +289,7 @@ function stop_worker {
             echo -e "${RED}Balancer or Nonce not found on $server${RESET}"
         else
             echo -e "Stopping worker $worker for $balancer on ${YELLOW}$server${RESET}"
-            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=1"`
+            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=1" -e "$server"`
         fi
     done
 	
@@ -322,7 +322,7 @@ function enable_worker {
             echo -e "${RED}Balancer or Nonce not found on $server${RESET}"
         else
             echo -e "Enabling worker ${YELLOW}$worker${RESET} for ${YELLOW}$balancer${RESET} on ${YELLOW}$server${RESET}"
-            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=0" -d "w_status_D=0"`
+            result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=0" -d "w_status_D=0" -e "$server"`
         fi
     done
 	
@@ -392,7 +392,7 @@ function enable_worker_slow {
                 echo -e "${RED}Balancer or Nonce not found on $server${RESET}"
             else
                 echo -e "Setting factor to $current_factor on ${YELLOW}$server${RESET}"
-                result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=0" -d "w_status_D=0" -d "w_lf=$current_factor"`
+                result=`curl -s "$server" -d "b=$balancer" -d "w=$worker" -d "nonce=$nonce" -d "w_status_S=0" -d "w_status_D=0" -d "w_lf=$current_factor" -e "$server"`
             fi
         done
 
